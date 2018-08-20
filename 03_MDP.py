@@ -3,18 +3,20 @@ import tensorflow.contrib.slim as slim
 import numpy as np
 import gym
 import matplotlib.pyplot as plt
+import displayfxn
 
 env = gym.make('CartPole-v0')
 
 #discount factor for reward
 gamma = 0.99
 
-def discount_rewards(r):
+def discount_rewards(r): #n by 1 array
     # calculate discounted rewards by using 1D array with float number of rewards
-    discounted_r = np.zeros_like(r)
+    discounted_r = np.zeros_like(r) #n by 1 space
     #zeros_like(r): Return an array of zeros with the same shape and type as a given array
 
     running_add = 0
+    #TEST WITH NO REVERSED!!!!!!!
     for t in reversed(range(0, r.size)): # if r.size is 5, t will be 4, 3, 2, 1, 0 as reversed
         running_add = running_add * gamma + r[t] #the latest r has bigger running_add? right!
         discounted_r[t] = running_add #the later r, the higher reward, the
@@ -23,13 +25,14 @@ def discount_rewards(r):
 class agent():
     def __init__(self, lr, s_size, a_size, h_size):
         #lr: learning rate
-        #s_size: state size
-        #a_size: action size
-        #h_size: hidden layer size
+        #s_size: state size 4
+        #a_size: action size 2
+        #h_size: hidden layer size 8
         #network feedforwad part, agent: input is state, output is action
-        self.state_in = tf.placeholder(shape = [None, s_size], dtype = tf.float32) #flexible by s_size
+        self.state_in = tf.placeholder(shape = [None, s_size], dtype = tf.float32) #flexible by s_size 4
         hidden = slim.fully_connected(self.state_in, h_size, biases_initializer= None, activation_fn=tf.nn.relu)
         #hidden layer: input - state_in s_size, output - h_size, activation - relu
+        #
         self.output = slim.fully_connected(hidden, a_size, biases_initializer=None, activation_fn=tf.nn.softmax)
         self.chosen_action = tf.argmax(self.output, 1) #return index of maximum value in output at axis = 1 of tensor
         #Returns the index with the largest value across axes of a tensor.
@@ -65,7 +68,7 @@ class agent():
             placeholder = tf.placeholder(tf.float32, name = str(idx) + '_holder') #make the placeholder with trainable
             self.gradient_holders.append(placeholder) #put trainable tensors to gradient_holder
 
-        self.gradient = tf.gradients(self.loss, tvars)
+        self.gradients = tf.gradients(self.loss, tvars)
         #gradients(ys, xs, grad_ys=None, name='gradients',
         # colocate_gradients_with_ops=False, gate_gradients=False, aggregation_method=None, stop_gradients=None)
         # Constructs symbolic derivatives of sum of `ys` w.r.t. x in `xs`.
@@ -81,6 +84,78 @@ class agent():
 #tensorflow
 tf.reset_default_graph()
 
+#load Agent
+myAgent = agent(lr=1e-2, s_size = 4, a_size = 2, h_size = 8)
+#state: 4, actions: 2, hidden layer = 8
+
+# total episodes for training agent
+total_episodes = 5000
+max_ep = 999
+update_frequency =5
+
+init = tf.global_variables_initializer()
+
+#launch tensorflow graph
+with tf.Session() as sess:
+    sess.run(init)
+    i = 0
+    total_reward = []
+    total_length = []
+
+    gradBuffer = sess.run(tf.trainable_variables())
+#    displayfxn.showOperation(gradBuffer)
+    for ix, grad in enumerate(gradBuffer):
+        gradBuffer[ix] = grad * 0
+#        print(gradBuffer[ix])
+
+    while i < total_episodes:
+        s = env.reset()
+        running_reward = 0
+        ep_history = []
+        for j in range(max_ep):
+            #choose action with possibility from network output
+            a_dist = sess.run(myAgent.output, feed_dict = {myAgent.state_in:[s]})
+            # s size is 4, states are 4
+            a = np.random.choice(a_dist[0], p=a_dist[0])
+            a = np.argmax(a_dist == a)
+
+            # get reward from action given bandit
+            s1, r, d, _ = env.step(a)
+            ep_history.append([s, a, r, s1]) #n by 4 nparray
+            s = s1
+            running_reward += r
+            if d == True: #done for running env and test
+                #update network
+                ep_history = np.array(ep_history)
+                ep_history[:, 2] = discount_rewards(ep_history[:, 2]) #reward - [:, 2]
+                feed_dict = {myAgent.reward_holder: ep_history[:, 2],
+                             myAgent.action_holder: ep_history[:, 1],
+                             myAgent.state_in: np.vstack(ep_history[:, 0])}
+                #np.vstack: Stack arrays in sequence vertically (row wise). make n by 1 array
+
+                #get gradients
+                grads = sess.run(myAgent.gradients, feed_dict=feed_dict)
+
+                for idx, grad in enumerate(grads):
+                    gradBuffer[idx] += grad
+                    #accumulate gradients
+
+                if i % update_frequency == 0 and i != 0 : # every 5, update from gradBuffer
+                    feed_dict1 = dictionary = dict(zip(myAgent.gradient_holders, gradBuffer))
+                    _ = sess.run(myAgent.update_batch, feed_dict= feed_dict1)
+                    for ix, grad in enumerate(gradBuffer):
+                        gradBuffer[ix] = grad*0
+
+                total_reward.append(running_reward)
+                total_length.append(j)
+                break
+
+
+        #update total rewards
+        if i % 100 == 0:
+            print(np.mean(total_reward[-100:]))
+
+        i += 1
 
 
 
