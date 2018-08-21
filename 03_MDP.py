@@ -16,9 +16,11 @@ def discount_rewards(r): #n by 1 array
     #zeros_like(r): Return an array of zeros with the same shape and type as a given array
 
     running_add = 0
-    #TEST WITH NO REVERSED!!!!!!!
+    #TEST WITH NO REVERSED!!!!!!! No... why?????
     for t in reversed(range(0, r.size)): # if r.size is 5, t will be 4, 3, 2, 1, 0 as reversed
+        #print('t is',t,'r[t] is', r[t])
         running_add = running_add * gamma + r[t] #the latest r has bigger running_add? right!
+        #print(running_add)
         discounted_r[t] = running_add #the later r, the higher reward, the
     return discounted_r
 
@@ -115,12 +117,15 @@ with tf.Session() as sess:
         for j in range(max_ep):
             #choose action with possibility from network output
             a_dist = sess.run(myAgent.output, feed_dict = {myAgent.state_in:[s]})
+
             # s size is 4, states are 4
             a = np.random.choice(a_dist[0], p=a_dist[0])
-            a = np.argmax(a_dist == a)
+            #pick one of a_dist, e.g. 0.49 or 0.51 from [0.49, 0.51]
+            a = np.argmax(a_dist == a) #return 0 or 1
+
 
             # get reward from action given bandit
-            s1, r, d, _ = env.step(a)
+            s1, r, d, _ = env.step(a) #from 0 or 1 action, we can get (new state, reward, done)
             ep_history.append([s, a, r, s1]) #n by 4 nparray
             s = s1
             running_reward += r
@@ -135,6 +140,8 @@ with tf.Session() as sess:
 
                 #get gradients
                 grads = sess.run(myAgent.gradients, feed_dict=feed_dict)
+
+                #print(grads)
 
                 for idx, grad in enumerate(grads):
                     gradBuffer[idx] += grad
